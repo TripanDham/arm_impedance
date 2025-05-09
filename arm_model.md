@@ -30,6 +30,8 @@ Red: X axis, Green: Y axis, Blue: Z axis
 X axis: Outwards from the back of the palm
 Y axis: along the direction of forearm, pointing from elbow to hand
 
+![sagittal plane](https://github.com/TripanDham/arm_impedance/blob/main/images/sagittal_plane.png "Arm 1")
 Hand in sagittal plane
 
+![transverse plane](https://github.com/TripanDham/arm_impedance/blob/main/images/transverse_plane.png "Arm 2")
 Hand parallel to transverse plane
