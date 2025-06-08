@@ -1,0 +1,18 @@
+Thu Jun  5 15:13:28 2025
+WARNING: mju_openResource: unknown file '/myosim/myoarm.xml'
+
+Thu Jun  5 15:13:39 2025
+WARNING: mju_openResource: unknown file 'myosim/myoarm.xml'
+
+Thu Jun  5 15:13:46 2025
+WARNING: mju_openResource: unknown file 'myo_sim/myoarm.xml'
+
+Thu Jun  5 15:13:58 2025
+WARNING: mju_openResource: unknown file './myo_sim/myoarm.xml'
+
+Thu Jun  5 15:14:11 2025
+WARNING: mju_openResource: unknown file './myo_sim/arm/../scene/myosuite_scene.xml'
+
+Thu Jun  5 15:14:39 2025
+WARNING: mju_openResource: unknown file 'myo_sim/arm/../scene/myosuite_scene.xml'
+
