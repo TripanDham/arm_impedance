@@ -8,6 +8,8 @@ env = gym.make('myoChallengeRelocateP1-v0')
 env.reset()
 model = env.unwrapped.sim.model
 data = env.unwrapped.sim.data
+original_qpos = data.qpos.copy()
+original_qvel = data.qvel.copy()
 
 #DOF order: shoulder_elv_plane, shoulder_elv_angle, shoulder_rot, elbow_flex
 torq = np.array([5, -5, -2, 2])
@@ -33,9 +35,17 @@ def torque_constraint(activations, req_torq):
     for idx, act in zip(muscle_indices, activations):
         ctrl[idx] = act
 
+    start_t = time.time_ns()
     env.reset()
+    end_t = time.time_ns()
+    print("reset time: ", (end_t-start_t)/1e9)
+    data.qpos = original_qpos
+    data.qvel = original_qvel
+    
+    start_t = time.time_ns()
     env.step(ctrl)
-
+    end_t = time.time_ns()
+    print("step time: ", (end_t-start_t)/1e9)
     # elv_plane_torq = data.qfrc_actuator[model.name2id('acromioclavicular_r2', 'joint')] + data.qfrc_actuator[model.name2id('elv_angle', 'joint')]
     # elv_angle_torq = data.qfrc_actuator[model.name2id('acromioclavicular_r3', 'joint')] + data.qfrc_actuator[model.name2id('shoulder_elv', 'joint')]
     # shoulder_rot_torq = data.qfrc_actuator[model.name2id('shoulder1_r2', 'joint')] + data.qfrc_actuator[model.name2id('shoulder_rot', 'joint')]
@@ -52,28 +62,26 @@ def torque_constraint(activations, req_torq):
     elbow_torq = data.qfrc_actuator[elbow_id] + data.qfrc_passive[elbow_id] + data.qfrc_applied[elbow_id]
 
     torq = [elv_plane_torq, elv_angle_torq, shoulder_rot_torq, elbow_torq]
-    return np.array(torq) - req_torq
-    # return elbow_torq - req_torq
+    error = np.array(torq) - req_torq
+    return 0.1 - abs(error)
 
-# Use lambda to pass the required torques
 constraints = {
     'type': 'eq',
     'fun': lambda x: torque_constraint(x, torq),
     'tol': 0.1
 }
 
-# Set activation bounds
 bounds = [(0, 1)] * 23
 
 start_t = time.time_ns()
-# Run the optimization
+
 res = scipy.optimize.minimize(
     fun=cost_fn,
     x0=initial_guess,
     method='SLSQP',
     constraints=[constraints],
     bounds=bounds,
-    options={'disp': True, 'maxiter': 10}
+    options={'disp': True, 'maxiter': 5}
 )
 end_t=time.time_ns()
 
