@@ -6,6 +6,7 @@ env = gym.make('myoChallengeRelocateP1-v0')
 env.reset()
 model = env.unwrapped.sim.model
 data = env.unwrapped.sim.data
+env.unwrapped.sim.forward()
 
 joint_names = [
     'acromioclavicular_r1', 'acromioclavicular_r2', 'acromioclavicular_r3', 
@@ -19,7 +20,8 @@ joint_names = [
     # 'unrothum_r1', 'unrothum_r2', 'unrothum_r3', 'unrotscap_r2', 'unrotscap_r3'
 ]
 original_qpos = data.qpos.copy()
-print(dir(data))
+
+print(model.tendon_lengthspring)
 
 # position = [1,0,1.57,0]
 # for i in range(len(joint_names)):   

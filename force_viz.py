@@ -10,19 +10,23 @@ env.reset()
 
 # Parameters
 num_steps = 500
-activation_value = 0.4  # Set all muscle activations to this constant
+# activation_value = 0.4  # Set all muscle activations to this constant
 
 # Record torques
 torque_history = []
 
 model = env.unwrapped.sim.model
 data = env.unwrapped.sim.data
+env.unwrapped.sim.forward()
 
+init_state = env.unwrapped.sim.get_state()
 # Run simulation
 for _ in range(num_steps):
-    action = np.ones(env.action_space.shape) * activation_value
+    # action = np.ones(env.action_space.shape) * activation_value
+    # data.act[:] = init_state['act']
+    data.act[model.name2id('BIClong', 'actuator')] = 1
     
-    env.step(action)
+    env.unwrapped.sim.forward()
     env.mj_render()
     # Get joint torques from qfrc_actuator
     torques = (data.qfrc_passive.copy() + data.qfrc_actuator.copy() + data.qfrc_applied.copy())[6:]

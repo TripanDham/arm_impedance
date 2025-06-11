@@ -3,6 +3,7 @@ import mujoco
 import numpy as np
 import scipy.optimize
 import time
+import matplotlib.pyplot as plt
 
 env = gym.make('myoChallengeRelocateP1-v0')
 env.reset()
@@ -10,6 +11,8 @@ model = env.unwrapped.sim.model
 data = env.unwrapped.sim.data
 original_qpos = data.qpos.copy()
 original_qvel = data.qvel.copy()
+
+init_state = env.unwrapped.sim.get_state()
 
 #DOF order: shoulder_elv_plane, shoulder_elv_angle, shoulder_rot, elbow_flex
 torq = np.array([5, -5, -2, 2])
@@ -35,17 +38,13 @@ def torque_constraint(activations, req_torq):
     for idx, act in zip(muscle_indices, activations):
         ctrl[idx] = act
 
-    start_t = time.time_ns()
-    env.reset()
-    end_t = time.time_ns()
-    print("reset time: ", (end_t-start_t)/1e9)
-    data.qpos = original_qpos
-    data.qvel = original_qvel
+    data.time = init_state['time']
+    data.qpos[:] = init_state['qpos']
+    data.qvel[:] = init_state['qvel']
     
-    start_t = time.time_ns()
-    env.step(ctrl)
-    end_t = time.time_ns()
-    print("step time: ", (end_t-start_t)/1e9)
+    data.act[:] = ctrl
+    # env.step(ctrl)
+    env.unwrapped.sim.forward()
     # elv_plane_torq = data.qfrc_actuator[model.name2id('acromioclavicular_r2', 'joint')] + data.qfrc_actuator[model.name2id('elv_angle', 'joint')]
     # elv_angle_torq = data.qfrc_actuator[model.name2id('acromioclavicular_r3', 'joint')] + data.qfrc_actuator[model.name2id('shoulder_elv', 'joint')]
     # shoulder_rot_torq = data.qfrc_actuator[model.name2id('shoulder1_r2', 'joint')] + data.qfrc_actuator[model.name2id('shoulder_rot', 'joint')]
@@ -63,12 +62,11 @@ def torque_constraint(activations, req_torq):
 
     torq = [elv_plane_torq, elv_angle_torq, shoulder_rot_torq, elbow_torq]
     error = np.array(torq) - req_torq
-    return 0.1 - abs(error)
+    return error
 
 constraints = {
     'type': 'eq',
     'fun': lambda x: torque_constraint(x, torq),
-    'tol': 0.1
 }
 
 bounds = [(0, 1)] * 23
@@ -81,7 +79,7 @@ res = scipy.optimize.minimize(
     method='SLSQP',
     constraints=[constraints],
     bounds=bounds,
-    options={'disp': True, 'maxiter': 5}
+    options={'disp': True, 'maxiter': 10}
 )
 end_t=time.time_ns()
 
@@ -114,7 +112,34 @@ print("Final torques:", torq)
 
 env.mj_render()
 time.sleep(0.1)
-for _ in range(200):
+
+ctrl_values = []
+act_values = []
+id = model.name2id('DELT3', 'actuator')
+
+for _ in range(300):
     env.step(ctrl)
     env.mj_render()
-time.sleep(100)
+
+    # Access and store one element from ctrl and act
+    ctrl_values.append(data.ctrl[id])
+    act_values.append(data.act[id])
+
+# Plotting
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+
+# Plot control input
+ax1.plot(ctrl_values, color='tab:blue')
+ax1.set_ylabel('Control Input')
+ax1.set_title('Control vs Time')
+ax1.grid(True)
+
+# Plot activation
+ax2.plot(act_values, color='tab:orange')
+ax2.set_xlabel('Timestep')
+ax2.set_ylabel('Muscle Activation')
+ax2.set_title('Activation vs Time')
+ax2.grid(True)
+
+plt.tight_layout()
+plt.show()
