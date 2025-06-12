@@ -264,23 +264,6 @@ plt.show()
 
 
 #TODO: 
-# Display and check
 # Test EMG
 # Add a failsafe - if opt fails - for more than certain number of steps - then break out
 # is it useful to store the jacobian and hessian of the cost function from the current instant to save time from the next instant
-
-# torq = np.array([2, -2, -1, 2])
-# q = [ 0.17281, 0.168055, -0.109975, 1.11181]
-# for i in range(len(model.joint_names)):
-#     model.data.qpos[model.model.joint(model.joint_names[i]).qposadr] = q[i]
-# qpos = [0.168055, 1.11181, 0.17281, -0.109975]
-# qvel = [model.data.qvel[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_JOINT, i)] for i in model.joint_names]
-
-
-# with mujoco.viewer.launch_passive(model.model, model.data) as viewer:
-#     while viewer.is_running():
-#         # model.data.act[model.muscle_ids] = np.ones_like(model.muscle_ids)
-#         mujoco.mj_forward(model.model, model.data)
-#         # print([model.data.qpos[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_JOINT, i)] for i in model.joint_names])
-#         viewer.sync()
-#         time.sleep(0.01)
