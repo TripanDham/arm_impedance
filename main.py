@@ -25,6 +25,19 @@ muscle_names = [
     "TRIlat", "TRImed", "ANC", "SUP", "BIClong", "BICshort", "BRA", "BRD"
 ]
 
+joint_names = [
+    # 'acromioclavicular_r1', 'acromioclavicular_r2', 'acromioclavicular_r3', 
+    'elv_angle',
+    'elbow_flexion',
+    # 'pro_sup', 
+    # 'flexion', 'deviation', 
+    # 'shoulder1_r2',
+    'shoulder_elv',
+    'shoulder_rot', 
+    # 'sternoclavicular_r2', 'sternoclavicular_r3',
+    # 'unrothum_r1', 'unrothum_r2', 'unrothum_r3', 'unrotscap_r2', 'unrotscap_r3'
+]
+
 muscle_indices = [model.name2id(name, 'actuator') for name in muscle_names]
 
 initial_guess = np.ones(23) * 0.1
@@ -41,13 +54,11 @@ def torque_constraint(activations, req_torq):
     data.time = init_state['time']
     data.qpos[:] = init_state['qpos']
     data.qvel[:] = init_state['qvel']
-    
+    print([data.qpos[model.name2id(i, 'joint')] for i in joint_names])
     data.act[:] = ctrl
     # env.step(ctrl)
     env.unwrapped.sim.forward()
-    # elv_plane_torq = data.qfrc_actuator[model.name2id('acromioclavicular_r2', 'joint')] + data.qfrc_actuator[model.name2id('elv_angle', 'joint')]
-    # elv_angle_torq = data.qfrc_actuator[model.name2id('acromioclavicular_r3', 'joint')] + data.qfrc_actuator[model.name2id('shoulder_elv', 'joint')]
-    # shoulder_rot_torq = data.qfrc_actuator[model.name2id('shoulder1_r2', 'joint')] + data.qfrc_actuator[model.name2id('shoulder_rot', 'joint')]
+    
     elv_plane_id = model.name2id('shoulder_elv', 'joint')
     elv_plane_torq = data.qfrc_actuator[elv_plane_id] + data.qfrc_passive[elv_plane_id] + data.qfrc_applied[elv_plane_id]
 
