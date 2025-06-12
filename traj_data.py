@@ -61,15 +61,15 @@ for region_id in range(i, j + 1):
     # Store adjusted region
     df_list.append(df_region)
 
-    # print("Movement Number: ", region_id)
-    # for index, row in df_region.iterrows():
-    #     for a in joint_names:
-    #         data.qpos[model.name2id(a, 'joint')] = np.deg2rad(row[f'a_{a}'])
-    #         data.qvel[model.name2id(a, 'joint')] = np.deg2rad(row[f'vel_{a}'])
-    #         data.qacc[model.name2id(a, 'joint')] = np.deg2rad(row[f'acc_{a}'])
+    print("Movement Number: ", region_id)
+    for index, row in df_region.iterrows():
+        for a in joint_names:
+            data.qpos[model.name2id(a, 'joint')] = np.deg2rad(row[f'a_{a}'])
+            data.qvel[model.name2id(a, 'joint')] = np.deg2rad(row[f'vel_{a}'])
+            data.qacc[model.name2id(a, 'joint')] = np.deg2rad(row[f'acc_{a}'])
         
-    #     env.sim.forward()
-    #     env.mj_render()
+        env.sim.forward()
+        env.mj_render()
 # Concatenate all adjusted regions
 df_cumulative = pd.concat(df_list, ignore_index=True)
 df_region_1 = df_cumulative

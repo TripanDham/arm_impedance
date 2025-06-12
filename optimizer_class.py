@@ -133,7 +133,7 @@ class MuscleModel:
             method='SLSQP',
             constraints=[constraints],
             bounds=bounds,
-            options={'disp': False, 'maxiter': 15, 'tol': 1e-2}
+            options={'disp': False, 'maxiter': 50, 'tol': 1e-2}
         )
         end_t = time.time_ns()
         print(f"Optimization took {(end_t - start_t) / 1e6} ms")
@@ -141,7 +141,7 @@ class MuscleModel:
         if not res.success:
             print("Optimization failed:", res.message)
 
-        return res.x, res.fun
+        return res.x, res.fun, res.success, end_t - start_t
 
 model_path = "myo_sim/arm/myoarm.xml" 
 model = MuscleModel(
@@ -181,8 +181,15 @@ for region_id in range(i, j + 1):
     df_list.append(df_region)
 
     print("Movement Number: ", region_id)
-    
-for index, row in df_list[0].iterrows():
+
+# Initialize tracking lists
+commanded_torques_list = []
+obtained_torques_list = []
+optimization_times_ms = []
+optimization_success = []
+
+# with mujoco.viewer.launch_passive(model.model, model.data) as viewer:    
+for index, row in df_list[5].iterrows():
     torq = []
     for name in model.joint_names:
         model.data.qpos[model.model.joint(name).qposadr] = np.deg2rad(row[f'a_{name}'])
@@ -193,19 +200,74 @@ for index, row in df_list[0].iterrows():
     torq = np.array(torq)
     mujoco.mj_forward(model.model, model.data)
     # mujoco.mj_step(model.model, model.data)
-    activations, err = model.optimize(req_torques=torq)
+    activations, err, success, t = model.optimize(req_torques=torq)
+
     print("Torque = ", torq)
     print("Torque error = ", err)
-    print(activations)
 
-#TODO: Remove display text from scipy
+    elv_plane_torq = model.data.qfrc_actuator[model.elv_plane_id] + model.data.qfrc_passive[model.elv_plane_id] + model.data.qfrc_applied[model.elv_plane_id]
+    elv_angle_torq = model.data.qfrc_actuator[model.elv_angle_id] + model.data.qfrc_passive[model.elv_angle_id] + model.data.qfrc_applied[model.elv_angle_id]
+    shoulder_rot_torq = model.data.qfrc_actuator[model.rot_id] + model.data.qfrc_passive[model.rot_id] + model.data.qfrc_applied[model.rot_id]
+    elbow_torq = model.data.qfrc_actuator[model.elbow_id] + model.data.qfrc_passive[model.elbow_id] + model.data.qfrc_applied[model.elbow_id]
+
+    obt_torq = [elv_plane_torq[0], elv_angle_torq[0], shoulder_rot_torq[0], elbow_torq[0]]
+    
+    commanded_torques_list.append(torq)
+    obtained_torques_list.append(obt_torq)
+    optimization_success.append(success)
+    optimization_times_ms.append(t/1e6)
+
+    # viewer.sync()    
+
+# Convert lists to numpy arrays
+commanded_torques_arr = np.array(commanded_torques_list)
+obtained_torques_arr = np.array(obtained_torques_list)
+times_ms = np.array(optimization_times_ms)
+success_arr = np.array(optimization_success).astype(int)
+
+num_joints = len(model.joint_names)
+time_axis = np.arange(len(times_ms))
+
+# Set up subplot grid: one row for each joint, plus one for time, one for success
+total_rows = num_joints + 2
+fig, axes = plt.subplots(total_rows, 1, figsize=(12, 3 * total_rows), sharex=True)
+
+# Plot torque comparisons per joint
+for i, joint in enumerate(model.joint_names):
+    axes[i].plot(time_axis, commanded_torques_arr[:, i], label=f"Commanded {joint}", color='tab:blue')
+    axes[i].plot(time_axis, obtained_torques_arr[:, i], label=f"Obtained {joint}", color='tab:orange', linestyle='--')
+    axes[i].set_ylabel("Torque (Nm)")
+    axes[i].legend(loc="upper right")
+    axes[i].grid(True)
+
+# Plot optimization time
+axes[num_joints].plot(time_axis, times_ms, label="Optimization Time (ms)", color='tab:green')
+axes[num_joints].set_ylabel("Time (ms)")
+axes[num_joints].set_title("Optimization Time per Frame")
+axes[num_joints].set_ylim(0,120)
+axes[num_joints].legend(loc="upper right")
+axes[num_joints].grid(True)
+
+# Plot success
+axes[num_joints + 1].plot(time_axis, success_arr, label="Success", color='tab:red', marker='o')
+axes[num_joints + 1].set_ylabel("Success")
+axes[num_joints + 1].set_xlabel("Frame Index")
+axes[num_joints + 1].set_title("Optimization Success per Frame")
+axes[num_joints + 1].set_yticks([0, 1])
+axes[num_joints + 1].grid(True)
+axes[num_joints + 1].legend(loc="upper right")
+
+# General layout settings
+fig.suptitle("Torque Tracking and Optimization Diagnostics", fontsize=16, y=1.02)
+plt.tight_layout()
+plt.show()
+
+
+#TODO: 
 # Display and check
 # Test EMG
-# Try with each traj
 # Add a failsafe - if opt fails - for more than certain number of steps - then break out
 # is it useful to store the jacobian and hessian of the cost function from the current instant to save time from the next instant
-
-
 
 # torq = np.array([2, -2, -1, 2])
 # q = [ 0.17281, 0.168055, -0.109975, 1.11181]
