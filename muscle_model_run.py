@@ -11,6 +11,7 @@ import struct
 udp_ip = '127.0.0.1'
 udp_recv = 12348
 udp_send = 12349
+BUFFER_SIZE = 8192
 
 recv_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 recv_socket.bind((udp_ip, udp_recv))
@@ -82,10 +83,10 @@ class MuscleModel:
     #         print(f"Error scaling body mass: {e}")
 
     def optimize(self, req_torques: list, emg_act = []):
-        spec = mujoco.mjtState.mjSTATE_INTEGRATION
-        size = mujoco.mj_stateSize(self.model, spec)
-        state0 = np.empty(size, np.float64)
-        mujoco.mj_getState(self.model, self.data, state0, spec)
+        self.spec = mujoco.mjtState.mjSTATE_INTEGRATION
+        self.size = mujoco.mj_stateSize(self.model, self.spec)
+        self.state0 = np.empty(self.size, np.float64)
+        mujoco.mj_getState(self.model, self.data, self.state0, self.spec)
 
         #assuming act contains all the correct activations from previous instant, enforce emg based activations
         for i in range(len(emg_act)):
@@ -103,7 +104,7 @@ class MuscleModel:
 
         def torque_constraint(activations):
             
-            mujoco.mj_setState(self.model, self.data, state0, spec)
+            mujoco.mj_setState(self.model, self.data, self.state0, self.spec)
             # mujoco.mj_step(self.model, self.data)
 
             # for i in range(len(self.joint_names)):
@@ -144,7 +145,7 @@ class MuscleModel:
             method='SLSQP',
             constraints=[constraints],
             bounds=bounds,
-            options={'disp': False, 'maxiter': 50, 'tol': 1e-2}
+            options={'disp': False, 'maxiter': 10}
         )
         end_t = time.time_ns()
         print(f"Optimization took {(end_t - start_t) / 1e6} ms")
@@ -184,148 +185,50 @@ model = MuscleModel(
     target_body="humerus" # just to change weight later on
 )
 
-df_all = pd.read_pickle('data.pkl')  
-
-multiple_region_flg = True
-plt_flg = False
-
-df_all['region'] = (df_all['time'] == 0).cumsum()
-# Filter data for region 1
-df_region_1 = df_all[df_all['region'] == 401]
-
-i = 1
-j = df_all['region'].max()
-# j = 200print("Torque = ", torq)
-    # print("Torque error = ", err)
-# Get all regions from i to j
-df_selected = df_all[df_all['region'].between(i, j)]
-# Initialize empty list to hold adjusted dataframes
-df_list = []
-# Start cumulative time from 0
-time_offset = 0
-# Loop through each region
-for region_id in range(i, j + 1):
-    df_region = df_selected[df_selected['region'] == region_id].copy()
-    # Shift time by cumulative offset
-    df_region['time'] = df_region['time'] + time_offset
-    # Update time offset by DURATION, not final time value
-    duration = df_region['time'].iloc[-1] - df_region['time'].iloc[0]
-    time_offset += duration + (df_region['time'].diff().dropna().min())  # small delta to avoid overlap
-    # Store adjusted region
-    df_list.append(df_region)
-
-# Initialize tracking lists
-commanded_torques_list = []
-obtained_torques_list = []
-optimization_times_ms = []
-optimization_success = []
-k_arr = []
-activations_arr = []
-actuator_force_arr = []
+emg_ids = {'bicep': 0, 'tricep': 1, 'wrist_flex': 2, 'wrist_ext': 3, 'delc': 4, 'pec': 5, 'dels': 6}
 
 ############################################################### MAIN LOOP ####################################################################
-# with mujoco.viewer.launch_passive(model.model, model.data) as viewer:    
-for index, row in df_list[5].iterrows():
-    torq = []
-    for name in model.joint_names:
-        model.data.qpos[model.model.joint(name).qposadr] = np.deg2rad(row[f'a_{name}'])
-        model.data.qvel[model.model.joint(name).qposadr] = np.deg2rad(row[f'vel_{name}'])
-        
-        torq.append(row[f'm_{name}'])
-
+while True:
+    data, addr = recv_socket.recvfrom(BUFFER_SIZE)
+    if len(data) == 12 * 8:
+        values = struct.unpack('20d', data)
+        #unpack order: 4 joint angles, 4 joint velocities, 4 torques, 8 EMG values
+        torq = []
+        qpos = values[0:4]
+        qvel = values[4:8]
+        for i in range(len(model.joint_names)):
+            model.data.qpos[model.model.joint(model.joint_names[i]).qposadr] = values[i]
+            model.data.qvel[model.model.joint(model.joint_names[i]).qposadr] = values[4+i]
+            torq.append(values[8+i])
+        emg_vals = values[12:]
+    else:
+        print("Invalid packet size")
+    
     torq = np.array(torq)
     mujoco.mj_forward(model.model, model.data)
-    # mujoco.mj_step(model.model, model.data)
     activations, err, success, t = model.optimize(req_torques=torq)
 
-    # print("Torque = ", torq)
-    # print("Torque error = ", err)
-
-    elv_plane_torq = model.data.qfrc_actuator[model.elv_plane_id] + model.data.qfrc_passive[model.elv_plane_id] + model.data.qfrc_applied[model.elv_plane_id]
-    elv_angle_torq = model.data.qfrc_actuator[model.elv_angle_id] + model.data.qfrc_passive[model.elv_angle_id] + model.data.qfrc_applied[model.elv_angle_id]
-    shoulder_rot_torq = model.data.qfrc_actuator[model.rot_id] + model.data.qfrc_passive[model.rot_id] + model.data.qfrc_applied[model.rot_id]
-    elbow_torq = model.data.qfrc_actuator[model.elbow_id] + model.data.qfrc_passive[model.elbow_id] + model.data.qfrc_applied[model.elbow_id]
-
-    obt_torq = [elv_plane_torq[0], elv_angle_torq[0], shoulder_rot_torq[0], elbow_torq[0]]
+    mujoco.mj_setState(model.model, model.data, model.state0, model.spec)
+    ctrl = model.data.ctrl
     
-    commanded_torques_list.append(torq)
-    obtained_torques_list.append(obt_torq)
-    optimization_success.append(success)
-    optimization_times_ms.append(t/1e6)
+    for idx, act in zip(model.opt_muscle_ids, activations):
+        ctrl[idx] = act
+
+    for name in ["BIClong", "BICshort", "BRA", "BRD"]:
+        a = ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)]
+        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = 0.1*a + 0.9*emg_vals[emg_ids['bicep']]
     
+    for name in ["TRIlong","TRIlat", "TRImed"]:
+        a = ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)]
+        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = 0.1*a + 0.9*emg_vals[emg_ids['tricep']]
+    
+    for _ in range(3):
+        model.data.act = ctrl
+        mujoco.mj_step(model.model, model.data)
+
+    elbow_pos = model.data.qpos[model.elbow_id]
     k = np.abs(np.diag(model.stiffness()))
-    # print(k)
-    k_arr.append(k)
-    activations_arr.append(activations)
-    actuator_force_arr.append(model.data.actuator_force[model.opt_muscle_ids])
-    # viewer.sync()    
 
-#################################################################### PLOTTING ##############################################################
-# Convert lists to numpy arrays
-commanded_torques_arr = np.array(commanded_torques_list)
-obtained_torques_arr = np.array(obtained_torques_list)
-times_ms = np.array(optimization_times_ms)
-success_arr = np.array(optimization_success).astype(int)
-k_arr = np.array(k_arr)
-activations_arr = np.array(activations_arr)
-actuator_force_arr = np.array(actuator_force_arr)
+    send_data = struct.pack('2d', elbow_pos, k)
+    send_socket.sendto(send_data, (udp_ip, udp_send))
 
-num_joints = len(model.joint_names)
-time_axis = np.arange(len(times_ms))
-
-# Set up subplot grid: one row for each joint, plus one for time, one for success
-total_rows = num_joints + 3
-fig, axes = plt.subplots(total_rows, 1, figsize=(12, 3 * total_rows), sharex=True)
-
-# Plot torque comparisons per joint
-for i, joint in enumerate(model.joint_names):
-    axes[i].plot(time_axis, commanded_torques_arr[:, i], label=f"Commanded {joint}", color='tab:blue')
-    axes[i].plot(time_axis, obtained_torques_arr[:, i], label=f"Obtained {joint}", color='tab:orange', linestyle='--')
-    axes[i].set_ylabel("Torque (Nm)")
-    axes[i].legend(loc="upper right")
-    axes[i].grid(True)
-
-# Plot optimization time
-axes[num_joints].plot(time_axis, times_ms, label="Optimization Time (ms)", color='tab:green')
-axes[num_joints].set_ylabel("Time (ms)")
-axes[num_joints].set_title("Optimization Time per Frame")
-axes[num_joints].set_ylim(0,120)
-axes[num_joints].legend(loc="upper right")
-axes[num_joints].grid(True)
-
-# Plot success
-axes[num_joints + 1].plot(time_axis, success_arr, label="Success", color='tab:red', marker='o')
-axes[num_joints + 1].set_ylabel("Success")
-axes[num_joints + 1].set_xlabel("Frame Index")
-axes[num_joints + 1].set_title("Optimization Success per Frame")
-axes[num_joints + 1].set_yticks([0, 1])
-axes[num_joints + 1].grid(True)
-axes[num_joints + 1].legend(loc="upper right")
-fig.suptitle("Torque Tracking and Optimization Diagnostics", fontsize=16, y=1.02)
-plt.tight_layout()
-
-# Plot stiffness
-plt.figure()
-plt.plot(time_axis, k_arr[:,0], label="stiffness 1", color='tab:red')
-plt.plot(time_axis, k_arr[:,1], label="stiffness 2", color='tab:green')
-plt.plot(time_axis, k_arr[:,2], label="stiffness 3", color='tab:blue')
-plt.plot(time_axis, k_arr[:,3], label="stiffness 4", color='tab:orange')
-
-plt.figure()
-for i in range(len(activations)):
-    plt.plot(time_axis, activations_arr[:, i], label=f'{mujoco.mj_id2name(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)}')
-plt.legend()
-plt.title("Activations")
-
-plt.figure()
-for i in range(len(activations)):
-    plt.plot(time_axis, actuator_force_arr[:, i], label=f'{mujoco.mj_id2name(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)}')
-plt.legend()
-plt.title("Actuator Forces")
-
-plt.show()
-
-#TODO: 
-# Test EMG
-# Add a failsafe - if opt fails - for more than certain number of steps - then break out
-# is it useful to store the jacobian and hessian of the cost function from the current instant to save time from the next instant
