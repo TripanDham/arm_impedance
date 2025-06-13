@@ -153,7 +153,7 @@ class MuscleModel:
         if not res.success:
             print("Optimization failed:", res.message)
 
-        return res.x, res.fun, res.success, end_t - start_t
+        return res.x, res.fun, res.success, (end_t - start_t)/1e6
     
     def stiffness(self):
         K_muscle = []
@@ -187,6 +187,10 @@ model = MuscleModel(
 
 emg_ids = {'bicep': 0, 'tricep': 1, 'wrist_flex': 2, 'wrist_ext': 3, 'delc': 4, 'pec': 5, 'dels': 6}
 
+fail_count = 0
+time_count = 0
+error = 0
+
 ############################################################### MAIN LOOP ####################################################################
 while True:
     data, addr = recv_socket.recvfrom(BUFFER_SIZE)
@@ -205,8 +209,25 @@ while True:
         print("Invalid packet size")
     
     torq = np.array(torq)
-    mujoco.mj_forward(model.model, model.data)
+    mujoco.mj_forward(model.model, model.data) #joint positions set above, so run fwd to set sim state
+    
     activations, err, success, t = model.optimize(req_torques=torq)
+
+    if not(success):
+        fail_count += 1
+    if fail_count > 0:
+        if success:
+            fail_count -= 1
+    if t > 40:
+        time_count += 1
+    if time_count > 0:
+        if t < 40:
+            time_count -= 1
+    
+    if fail_count > 100 or time_count > 100:
+        error = 1
+    else:
+        error = 0
 
     mujoco.mj_setState(model.model, model.data, model.state0, model.spec)
     ctrl = model.data.ctrl
@@ -214,13 +235,14 @@ while True:
     for idx, act in zip(model.opt_muscle_ids, activations):
         ctrl[idx] = act
 
+    blend = 0.1
     for name in ["BIClong", "BICshort", "BRA", "BRD"]:
         a = ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)]
-        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = 0.1*a + 0.9*emg_vals[emg_ids['bicep']]
+        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = blend*a + (1-blend)*emg_vals[emg_ids['bicep']]
     
     for name in ["TRIlong","TRIlat", "TRImed"]:
         a = ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)]
-        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = 0.1*a + 0.9*emg_vals[emg_ids['tricep']]
+        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = blend*a + (1-blend)*emg_vals[emg_ids['tricep']]
     
     for _ in range(3):
         model.data.act = ctrl
@@ -229,6 +251,6 @@ while True:
     elbow_pos = model.data.qpos[model.elbow_id]
     k = np.abs(np.diag(model.stiffness()))
 
-    send_data = struct.pack('2d', elbow_pos, k)
+    send_data = struct.pack('2d', elbow_pos, k, error)
     send_socket.sendto(send_data, (udp_ip, udp_send))
 
