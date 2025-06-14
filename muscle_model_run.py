@@ -194,20 +194,27 @@ error = 0
 ############################################################### MAIN LOOP ####################################################################
 while True:
     data, addr = recv_socket.recvfrom(BUFFER_SIZE)
-    if len(data) == 12 * 8:
-        values = struct.unpack('20d', data)
-        #unpack order: 4 joint angles, 4 joint velocities, 4 torques, 8 EMG values
+    if len(data) == 26 * 8:
+        values = struct.unpack('26d', data)
         torq = []
-        qpos = values[0:4]
-        qvel = values[4:8]
+        shoulder_emg = values[0:4]
+        arm_emg = values[4:8] #order: black, red, green, blue
+        q_elbow = values[8] + np.pi/2
+        q_shoulder = values[20:23]
+        q_shoulder = [0,0,0]
+        vel_elbow = values[12]
+        vel_shoulder = values[23:26]
+        vel_shoulder = [0,0,0]
+        qpos = list(q_shoulder) + [q_elbow]
+        qvel = list(vel_shoulder) + [vel_elbow]
         for i in range(len(model.joint_names)):
-            model.data.qpos[model.model.joint(model.joint_names[i]).qposadr] = values[i]
-            model.data.qvel[model.model.joint(model.joint_names[i]).qposadr] = values[4+i]
-            torq.append(values[8+i])
+            model.data.qpos[model.model.joint(model.joint_names[i]).qposadr] = qpos[i]
+            model.data.qvel[model.model.joint(model.joint_names[i]).qposadr] = qvel[i]
+            # torq.append(values[8+i])
         emg_vals = values[12:]
     else:
         print("Invalid packet size")
-    
+    torq = [0,0,0,2]
     torq = np.array(torq)
     mujoco.mj_forward(model.model, model.data) #joint positions set above, so run fwd to set sim state
     
@@ -236,21 +243,35 @@ while True:
         ctrl[idx] = act
 
     blend = 0.1
+    bicep_emg = (arm_emg[0] - 200)/4000
+    tricep_emg = (arm_emg[1] - 200)/4000
+    if bicep_emg < 0:
+        bicep_emg = 0
+    if tricep_emg > 1:
+        tricep_emg = 1
+    print("Bicep activation: ", bicep_emg)
+    print("Tricep activation: ", tricep_emg)
     for name in ["BIClong", "BICshort", "BRA", "BRD"]:
         a = ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)]
-        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = blend*a + (1-blend)*emg_vals[emg_ids['bicep']]
+        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = blend*a + (1-blend)*bicep_emg
     
     for name in ["TRIlong","TRIlat", "TRImed"]:
         a = ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)]
-        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = blend*a + (1-blend)*emg_vals[emg_ids['tricep']]
+        ctrl[mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)] = blend*a + (1-blend)*tricep_emg
     
     for _ in range(3):
-        model.data.act = ctrl
+        model.data.ctrl = ctrl
         mujoco.mj_step(model.model, model.data)
-
     elbow_pos = model.data.qpos[model.elbow_id]
-    k = np.abs(np.diag(model.stiffness()))
+    print(f"Elbow position: {elbow_pos}")
+    print(f"Elbow velocity: {model.data.qvel[model.elbow_id]}")
+    print(f"Elbow torque: {model.data.qfrc_actuator[model.elbow_id] + model.data.qfrc_passive[model.elbow_id] + model.data.qfrc_applied[model.elbow_id]}")
+    k = np.abs(model.stiffness())
 
-    send_data = struct.pack('2d', elbow_pos, k, error)
+    elbow_pos = float(elbow_pos)
+    k = float(k[3,3])
+    error = float(error)
+
+    send_data = struct.pack('3d', elbow_pos, k, error)
     send_socket.sendto(send_data, (udp_ip, udp_send))
 

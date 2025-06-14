@@ -16,3 +16,75 @@ WARNING: mju_openResource: unknown file './myo_sim/arm/../scene/myosuite_scene.x
 Thu Jun  5 15:14:39 2025
 WARNING: mju_openResource: unknown file 'myo_sim/arm/../scene/myosuite_scene.xml'
 
+Sat Jun 14 17:34:16 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:36:21 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:36:58 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:37:15 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:38:13 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:38:45 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:43:38 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:46:26 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:47:44 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:48:44 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:50:02 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:50:42 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:51:20 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:51:31 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:52:38 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:52:59 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:53:07 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:53:20 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:53:33 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:55:22 2025
+WARNING: Nan, Inf or huge value in QPOS at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 17:59:58 2025
+WARNING: Nan, Inf or huge value in QVEL at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 18:00:54 2025
+WARNING: Nan, Inf or huge value in QVEL at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 18:03:22 2025
+WARNING: Nan, Inf or huge value in QVEL at DOF 10. The simulation is unstable. Time = 0.0000.
+
+Sat Jun 14 18:04:20 2025
+WARNING: Nan, Inf or huge value in QVEL at DOF 10. The simulation is unstable. Time = 0.0000.
+

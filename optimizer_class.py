@@ -5,17 +5,8 @@ import time
 import scipy.optimize
 import pandas as pd
 import matplotlib.pyplot as plt
+
 import socket
-import struct
-
-udp_ip = '127.0.0.1'
-udp_recv = 12348
-udp_send = 12349
-
-recv_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-recv_socket.bind((udp_ip, udp_recv))
-
-send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 class MuscleModel:
     def __init__(self, scale: float, wrist_on: bool = False, model_path: str = "model.xml", target_body: str = "body_to_scale", emg_muscles = []):
@@ -116,7 +107,7 @@ class MuscleModel:
                 ctrl[idx] = act
 
             self.data.ctrl = ctrl
-            for _ in range(2):
+            for _ in range(1):
                 self.data.act = ctrl
                 mujoco.mj_step(self.model, self.data)
 
@@ -153,28 +144,6 @@ class MuscleModel:
             print("Optimization failed:", res.message)
 
         return res.x, res.fun, res.success, end_t - start_t
-    
-    def stiffness(self):
-        K_muscle = []
-        alpha = 23.4
-        for id in self.muscle_ids:
-            f = self.data.actuator_force[id]
-            l = self.data.actuator_length[id]
-            km = alpha * f/l
-            K_muscle.append(km)
-
-        jac = self.data.ten_J
-        jac_1 = []
-        for i in range(self.model.na):
-            if i in self.muscle_ids:
-                jac_1.append([])
-                for j in range(self.model.nq):
-                    if j in [self.elv_plane_id, self.elv_angle_id, self.rot_id, self.elbow_id]:
-                        jac_1[i].append(jac[i, j])
-            
-        jac_1 = np.array(jac_1)
-        k_joints = jac_1.T @ np.diag(K_muscle) @ jac_1
-        return k_joints
 
 model_path = "myo_sim/arm/myoarm.xml" 
 model = MuscleModel(
@@ -195,8 +164,7 @@ df_region_1 = df_all[df_all['region'] == 401]
 
 i = 1
 j = df_all['region'].max()
-# j = 200print("Torque = ", torq)
-    # print("Torque error = ", err)
+# j = 200
 # Get all regions from i to j
 df_selected = df_all[df_all['region'].between(i, j)]
 # Initialize empty list to hold adjusted dataframes
@@ -214,16 +182,14 @@ for region_id in range(i, j + 1):
     # Store adjusted region
     df_list.append(df_region)
 
+    print("Movement Number: ", region_id)
+
 # Initialize tracking lists
 commanded_torques_list = []
 obtained_torques_list = []
 optimization_times_ms = []
 optimization_success = []
-k_arr = []
-activations_arr = []
-actuator_force_arr = []
 
-############################################################### MAIN LOOP ####################################################################
 # with mujoco.viewer.launch_passive(model.model, model.data) as viewer:    
 for index, row in df_list[5].iterrows():
     torq = []
@@ -238,8 +204,8 @@ for index, row in df_list[5].iterrows():
     # mujoco.mj_step(model.model, model.data)
     activations, err, success, t = model.optimize(req_torques=torq)
 
-    # print("Torque = ", torq)
-    # print("Torque error = ", err)
+    print("Torque = ", torq)
+    print("Torque error = ", err)
 
     elv_plane_torq = model.data.qfrc_actuator[model.elv_plane_id] + model.data.qfrc_passive[model.elv_plane_id] + model.data.qfrc_applied[model.elv_plane_id]
     elv_angle_torq = model.data.qfrc_actuator[model.elv_angle_id] + model.data.qfrc_passive[model.elv_angle_id] + model.data.qfrc_applied[model.elv_angle_id]
@@ -252,29 +218,20 @@ for index, row in df_list[5].iterrows():
     obtained_torques_list.append(obt_torq)
     optimization_success.append(success)
     optimization_times_ms.append(t/1e6)
-    
-    k = np.abs(np.diag(model.stiffness()))
-    # print(k)
-    k_arr.append(k)
-    activations_arr.append(activations)
-    actuator_force_arr.append(model.data.actuator_force[model.opt_muscle_ids])
+
     # viewer.sync()    
 
-#################################################################### PLOTTING ##############################################################
 # Convert lists to numpy arrays
 commanded_torques_arr = np.array(commanded_torques_list)
 obtained_torques_arr = np.array(obtained_torques_list)
 times_ms = np.array(optimization_times_ms)
 success_arr = np.array(optimization_success).astype(int)
-k_arr = np.array(k_arr)
-activations_arr = np.array(activations_arr)
-actuator_force_arr = np.array(actuator_force_arr)
 
 num_joints = len(model.joint_names)
 time_axis = np.arange(len(times_ms))
 
 # Set up subplot grid: one row for each joint, plus one for time, one for success
-total_rows = num_joints + 3
+total_rows = num_joints + 2
 fig, axes = plt.subplots(total_rows, 1, figsize=(12, 3 * total_rows), sharex=True)
 
 # Plot torque comparisons per joint
@@ -301,29 +258,12 @@ axes[num_joints + 1].set_title("Optimization Success per Frame")
 axes[num_joints + 1].set_yticks([0, 1])
 axes[num_joints + 1].grid(True)
 axes[num_joints + 1].legend(loc="upper right")
+
+# General layout settings
 fig.suptitle("Torque Tracking and Optimization Diagnostics", fontsize=16, y=1.02)
 plt.tight_layout()
-
-# Plot stiffness
-plt.figure()
-plt.plot(time_axis, k_arr[:,0], label="stiffness 1", color='tab:red')
-plt.plot(time_axis, k_arr[:,1], label="stiffness 2", color='tab:green')
-plt.plot(time_axis, k_arr[:,2], label="stiffness 3", color='tab:blue')
-plt.plot(time_axis, k_arr[:,3], label="stiffness 4", color='tab:orange')
-
-plt.figure()
-for i in range(len(activations)):
-    plt.plot(time_axis, activations_arr[:, i], label=f'{mujoco.mj_id2name(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)}')
-plt.legend()
-plt.title("Activations")
-
-plt.figure()
-for i in range(len(activations)):
-    plt.plot(time_axis, actuator_force_arr[:, i], label=f'{mujoco.mj_id2name(model.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)}')
-plt.legend()
-plt.title("Actuator Forces")
-
 plt.show()
+
 
 #TODO: 
 # Test EMG
