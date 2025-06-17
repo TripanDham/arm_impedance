@@ -19,11 +19,11 @@ recv_socket.bind((udp_ip, udp_recv))
 send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 class MuscleModel:
-    def __init__(self, scale: float, wrist_on: bool = False, model_path: str = "model.xml", target_body: str = "body_to_scale", emg_muscles = []):
-        self.scale = scale
+    def __init__(self, humerus_mass: float, forearm_mass: float, wrist_on: bool = False, model_path: str = "model.xml", emg_muscles = []):
+        self.humerus_mass = humerus_mass
+        self.forearm_mass = forearm_mass
         self.wrist_on = wrist_on
         self.model_path = model_path
-        self.target_body = target_body
 
         if self.wrist_on:
             self.muscle_names = []
@@ -54,7 +54,7 @@ class MuscleModel:
         self.model = mujoco.MjModel.from_xml_path(self.model_path)
         self.data = mujoco.MjData(self.model)
         # mujoco.mj_forward(self.model, self.data)
-        # self._scale_body_mass() 
+        self._scale_body_mass() 
 
         self.muscle_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name) for name in self.muscle_names]
         self.emg_muscle_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name) for name in self.emg_muscles]
@@ -73,14 +73,25 @@ class MuscleModel:
         self.rot_id = self.model.joint('shoulder_rot').dofadr
         self.elbow_id = self.model.joint('elbow_flexion').dofadr
 
-    # def _scale_body_mass(self):
-    #     try:
-    #         body_id = self.model.body(self.target_body)
-    #         original_mass = self.model.body_mass[body_id]
-    #         self.model.body_mass[body_id] = original_mass * self.scale
-    #         print(f"Scaled mass of '{self.target_body}' from {original_mass} to {self.model.body_mass[body_id]}")
-    #     except Exception as e:
-    #         print(f"Error scaling body mass: {e}")
+        self.prev_jac = []
+
+    def _scale_body_mass(self):
+        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'humerus')
+        original_mass = self.model.body_mass[body_id]
+        self.model.body_mass[body_id] = self.humerus_mass
+        inertia = self.model.body_inertia[body_id]
+        self.model.body_inertia[body_id] = self.humerus_mass/original_mass * inertia
+
+        ulna_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'ulna')
+        ulna_mass = self.model.body_mass[ulna_id]
+        ulna_inertia = self.model.body_inertia[ulna_id]
+        radius_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'radius')
+        radius_mass = self.model.body_mass[radius_id]
+        radius_inertia = self.model.body_inertia[radius_id]
+        self.model.body_mass[ulna_id] = ulna_mass/(ulna_mass+radius_mass) * self.forearm_mass
+        self.model.body_inertia[ulna_id] = self.model.body_mass[ulna_id]/ulna_mass * ulna_inertia
+        self.model.body_mass[radius_id] = radius_mass/(ulna_mass+radius_mass) * self.forearm_mass
+        self.model.body_inertia[radius_id] = self.model.body_mass[radius_id]/radius_mass * radius_inertia
 
     def optimize(self, req_torques: list, emg_act = []):
         self.spec = mujoco.mjtState.mjSTATE_INTEGRATION
@@ -158,31 +169,44 @@ class MuscleModel:
     def stiffness(self):
         K_muscle = []
         alpha = 23.4
+        muscle_forces = []
+
         for id in self.muscle_ids:
             f = self.data.actuator_force[id]
+            muscle_forces.append(f)
             l = self.data.actuator_length[id]
             km = alpha * f/l
             K_muscle.append(km)
+        
+        muscle_forces = np.array(muscle_forces)
 
         jac = self.data.ten_J
         jac_1 = []
+        joint_id_list = [self.elv_plane_id, self.elv_angle_id, self.rot_id, self.elbow_id]
+        jac_dot = []
         for i in range(self.model.na):
             if i in self.muscle_ids:
                 jac_1.append([])
+                jac_dot.append([])
                 for j in range(self.model.nq):
-                    if j in [self.elv_plane_id, self.elv_angle_id, self.rot_id, self.elbow_id]:
+                    if j in joint_id_list:
                         jac_1[i].append(jac[i, j])
-            
+                        if self.prev_jac:
+                            jac_dot.append((jac[i,j] - self.prev_jac[i,(len(jac_1[i]) - 1)])/(self.data.qpos[j] - self.prev_qpos[len(jac_1[i])-1]))
+
         jac_1 = np.array(jac_1)
-        k_joints = jac_1.T @ np.diag(K_muscle) @ jac_1
+        jac_dot = np.array(jac_dot)
+        self.prev_jac = jac_1
+        self.prev_qpos = [self.data.qpos[id] for id in joint_id_list]
+        k_joints = jac_1.T @ np.diag(K_muscle) @ jac_1 + jac_dot.T * muscle_forces
         return k_joints
 
 model_path = "myo_sim/arm/myoarm.xml" 
 model = MuscleModel(
-    scale=1.0,
     wrist_on=False,
     model_path=model_path,
-    target_body="humerus" # just to change weight later on
+    humerus_mass=1.8,
+    forearm_mass=1.1
 )
 
 emg_ids = {'bicep': 0, 'tricep': 1, 'wrist_flex': 2, 'wrist_ext': 3, 'delc': 4, 'pec': 5, 'dels': 6}
@@ -266,6 +290,7 @@ while True:
     print(f"Elbow position: {elbow_pos}")
     print(f"Elbow velocity: {model.data.qvel[model.elbow_id]}")
     print(f"Elbow torque: {model.data.qfrc_actuator[model.elbow_id] + model.data.qfrc_passive[model.elbow_id] + model.data.qfrc_applied[model.elbow_id]}")
+    
     k = np.abs(model.stiffness())
 
     elbow_pos = float(elbow_pos)

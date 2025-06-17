@@ -9,29 +9,33 @@ data = env.unwrapped.sim.data
 env.unwrapped.sim.forward()
 
 joint_names = [
-    'acromioclavicular_r1', 'acromioclavicular_r2', 'acromioclavicular_r3', 
+    # 'acromioclavicular_r1', 'acromioclavicular_r2', 'acromioclavicular_r3', 
+    'shoulder_elv',
     'elv_angle',
-    # 'elbow_flexion',
+    'shoulder_rot',
+    'elbow_flexion',
     # 'pro_sup', 
-    # 'flexion', 'deviation', 
-    'shoulder1_r2', 'shoulder_elv',
-    'shoulder_rot', 
+    # 'flexion', 'deviation', 'shoulder1_r2',  
     # 'sternoclavicular_r2', 'sternoclavicular_r3',
     # 'unrothum_r1', 'unrothum_r2', 'unrothum_r3', 'unrotscap_r2', 'unrotscap_r3'
 ]
 original_qpos = data.qpos.copy()
 
-print(model.tendon_lengthspring)
+# print(model.tendon_lengthspring)
 
-# position = [1,0,1.57,0]
-# for i in range(len(joint_names)):   
-#     jnt_id = model.name2id(joint_names[i], 'joint')
-#     qpos_adr = model.jnt_qposadr[jnt_id]
-#     data.qpos[qpos_adr] = position[i]
-# env.sim.forward()
-# env.mj_render()
-# time.sleep(3)
-# env.close()
+position = [1,0,1.57,0]
+
+# q = [0.17281, 0.168055, -0.109975, 1.11181] #env reset pos
+q = [1.57, 1.0, 0.2, 1.11181]
+
+for i in range(len(joint_names)):   
+    jnt_id = model.name2id(joint_names[i], 'joint')
+    qpos_adr = model.jnt_qposadr[jnt_id]
+    data.qpos[qpos_adr] = q[i]
+env.sim.forward()
+env.mj_render()
+time.sleep(3)
+env.close()
 # for joint_name in joint_names:
 #     try:
 #         jnt_id = model.name2id(joint_name, 'joint')
