@@ -5,6 +5,9 @@ import time
 import scipy.optimize
 import pandas as pd
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.io as pio
+import csv
 
 class MuscleModel:
     def __init__(self, scale: float, wrist_on: bool = False, model_path: str = "model.xml", target_body: str = "body_to_scale", emg_muscles = []):
@@ -135,7 +138,7 @@ class MuscleModel:
             method='SLSQP',
             constraints=[constraints],
             bounds=bounds,
-            options={'disp': False, 'maxiter': 50, 'tol': 1e-2}
+            options={'disp': False, 'maxiter': 100}
         )
         end_t = time.time_ns()
         print(f"Optimization took {(end_t - start_t) / 1e6} ms")
@@ -148,11 +151,9 @@ class MuscleModel:
     def stiffness(self):
         K_muscle = []
         alpha = 23.4
-        muscle_forces = []
 
         for id in self.muscle_ids:
-            f = self.data.actuator_force[id]
-            muscle_forces.append(f)
+            f = - self.data.actuator_force[id]
             l = self.data.actuator_length[id]
             km = alpha * f/l
             K_muscle.append(km)
@@ -178,8 +179,8 @@ class MuscleModel:
         self.prev_jac = jac_1
         self.prev_qpos = [self.data.qpos[id] for id in joint_id_list]
         k_joints = jac_1.T @ np.diag(K_muscle) @ jac_1
-        k_joints = abs(k_joints)
-        return k_joints, muscle_forces
+        k_joints = k_joints
+        return k_joints
 
 model_path = "myo_sim/arm/myoarm.xml" 
 model = MuscleModel(
@@ -222,12 +223,12 @@ model = MuscleModel(
 #     print("Movement Number: ", region_id)
 
 # Initialize tracking lists
-commanded_torques_list = []
-obtained_torques_list = []
-optimization_times_ms = []
-optimization_success = []
-stiffness_arr = []
-muscle_forces_arr = []
+# commanded_torques_list = []
+# obtained_torques_list = []
+# optimization_times_ms = []
+# optimization_success = []
+# stiffness_arr = []
+# muscle_forces_arr = []
 
 #RUN TRAJECTORY
 
@@ -319,56 +320,150 @@ muscle_forces_arr = []
 # plt.tight_layout()
 # plt.show()
 
-# POSITION CHECK
-
-q = [1.57, 0.5, 0.2, 1.11181]
-
-torque = [2,-5,-2,2]
-torque = np.array(torque)
-
-for i in range(len(model.joint_names)):
-    model.data.qpos[model.model.joint(model.joint_names[i]).qposadr] = q[i]
-    model.data.qvel[model.model.joint(model.joint_names[i]).qposadr] = 0
-
-mujoco.mj_forward(model.model, model.data)
-
 spec = mujoco.mjtState.mjSTATE_INTEGRATION
 size = mujoco.mj_stateSize(model.model, spec)
-state0 = np.empty(size, np.float64)
-mujoco.mj_getState(model.model, model.data, state0, spec)
+state1 = np.empty(size, np.float64)
+mujoco.mj_getState(model.model, model.data, state1, spec)
+
+
+# q = [1.57, 1.0, 0.2, 1.6]
+
+# for i in range(len(model.joint_names)):
+#     model.data.qpos[model.model.joint(model.joint_names[i]).qposadr] = q[i]
+#     model.data.qvel[model.model.joint(model.joint_names[i]).qposadr] = 0
+#     model.data.qacc[model.model.joint(model.joint_names[i]).qposadr] = 0
+
+# mujoco.mj_forward(model.model, model.data)
+# mujoco.mj_inverse(model.model, model.data)
+
+# elv_plane_torq = model.data.qfrc_actuator[model.elv_plane_id] + model.data.qfrc_passive[model.elv_plane_id] + model.data.qfrc_applied[model.elv_plane_id]
+# elv_angle_torq = model.data.qfrc_actuator[model.elv_angle_id] + model.data.qfrc_passive[model.elv_angle_id] + model.data.qfrc_applied[model.elv_angle_id]
+# shoulder_rot_torq = model.data.qfrc_actuator[model.rot_id] + model.data.qfrc_passive[model.rot_id] + model.data.qfrc_applied[model.rot_id]
+# elbow_torq = model.data.qfrc_actuator[model.elbow_id] + model.data.qfrc_passive[model.elbow_id] + model.data.qfrc_applied[model.elbow_id]
+
+# obt_torq = [elv_plane_torq[0], elv_angle_torq[0], shoulder_rot_torq[0], elbow_torq[0]]
+# print(obt_torq)
+
+
+def find_stiffness(q):
+    spec = mujoco.mjtState.mjSTATE_INTEGRATION
+    size = mujoco.mj_stateSize(model.model, spec) 
+    mujoco.mj_setState(model.model, model.data, state1, spec)
+    # q = [1.57, 0.7, 0.2, 2]
+    # torque = [-15,-1,-0.5,2]
+    # torque = np.array(torque)
+
+    for i in range(len(model.joint_names)):
+        model.data.qpos[model.model.joint(model.joint_names[i]).qposadr] = q[i]
+        model.data.qvel[model.model.joint(model.joint_names[i]).qposadr] = 0
+        model.data.qacc[model.model.joint(model.joint_names[i]).qposadr] = 0
+
+    mujoco.mj_forward(model.model, model.data)
+    torque = np.array([model.data.qfrc_inverse[id][0] for id in [model.elv_plane_id, model.elv_angle_id, model.rot_id, model.elbow_id]])
+    print("Torque = ", torque)
+    # torque[1] = 0
+    # torque[3] = 0
+
+    spec = mujoco.mjtState.mjSTATE_INTEGRATION
+    size = mujoco.mj_stateSize(model.model, spec)
+    state0 = np.empty(size, np.float64)
+    mujoco.mj_getState(model.model, model.data, state0, spec)
+        
+    activations, err, success, t = model.optimize(req_torques=torque)
+    # k, _ = model.stiffness()
+    # print("Stiffness: ", [k[0,0],k[1,1],k[2,2],k[3,3]])
+
+    # k = np.array([[2.22612592e+01 -1.03751631e+01 -4.63603935e+00  7.32344336e-01],[-1.03751631e+01  5.75668051e+01  2.50795380e+00  2.96334339e-01],[-4.63603935e+00  2.50795380e+00  4.28175375e+00  8.00523337e-03],[ 7.32344336e-01  2.96334339e-01  8.00523337e-03  1.00387523e+01]])
+    k = np.array([[22, -10.3, -4.6, 0.73], [-10.3, 57, 2.5, 0.296], [-4.63, 2.5, 4.28, 0.008], [0.73, 0.296, 0.008, 10 * 10]])
+    mujoco.mj_setState(model.model, model.data, state0, spec)
+
+    ctrl = model.data.ctrl
+                
+    for idx, act in zip(model.opt_muscle_ids, activations):
+        ctrl[idx] = act
+
+    model.data.ctrl = ctrl
+
+    body_name = "lunate"  
+    body_id = model.model.body(name=body_name).id
+
+    jacp = np.zeros((3, model.model.nv))  
+    jacr = np.zeros((3, model.model.nv))  
+
+    mujoco.mj_jacBodyCom(model.model, model.data, jacp, jacr, body_id)
+
+    joint_id_list = [model.elv_plane_id, model.elv_angle_id, model.rot_id, model.elbow_id]
+
+    J = jacp
+    # J = np.vstack((jacp, jacr)) 
+    J = J[:, joint_id_list]
+    J = J[:,:,0]
     
-activations, err, success, t = model.optimize(req_torques=torque)
-k, _ = model.stiffness()
-print(k)
-mujoco.mj_setState(model.model, model.data, state0, spec)
+    J_plus = J.T @ np.linalg.inv(J @ J.T)
 
-ctrl = model.data.ctrl
+    print(k)
+    K_end = J_plus.T @ k @ J_plus
+    K_end = K_end[:3,:3]
+    return K_end, k
+
+# q = [1.57, 0.7, 0.2, 2]
+
+# torque = [0.01,-5,0.01,2]
+# torque = np.array(torque)
+
+# for i in range(len(model.joint_names)):
+#     model.data.qpos[model.model.joint(model.joint_names[i]).qposadr] = q[i]
+#     model.data.qvel[model.model.joint(model.joint_names[i]).qposadr] = 0
+
+# mujoco.mj_forward(model.model, model.data)
+
+# spec = mujoco.mjtState.mjSTATE_INTEGRATION
+# size = mujoco.mj_stateSize(model.model, spec)
+# state0 = np.empty(size, np.float64)
+# mujoco.mj_getState(model.model, model.data, state0, spec)
+    
+# activations, err, success, t = model.optimize(req_torques=torque)
+# k, _ = model.stiffness()
+# print(k)
+# mujoco.mj_setState(model.model, model.data, state0, spec)
+
+# ctrl = model.data.ctrl
             
-for idx, act in zip(model.opt_muscle_ids, activations):
-    ctrl[idx] = act
+# for idx, act in zip(model.opt_muscle_ids, activations):
+#     ctrl[idx] = act
 
-model.data.ctrl = ctrl
+# model.data.ctrl = ctrl
 
-body_name = "lunate"  
-body_id = model.model.body(name=body_name).id
+# body_name = "lunate"  
+# body_id = model.model.body(name=body_name).id
 
-jacp = np.zeros((3, model.model.nv))  
-jacr = np.zeros((3, model.model.nv))  
+# jacp = np.zeros((3, model.model.nv))  
+# jacr = np.zeros((3, model.model.nv))  
 
-mujoco.mj_jacBodyCom(model.model, model.data, jacp, jacr, body_id)
+# mujoco.mj_jacBodyCom(model.model, model.data, jacp, jacr, body_id)
 
-joint_id_list = [model.elv_plane_id, model.elv_angle_id, model.rot_id, model.elbow_id]
+# joint_id_list = [model.elv_plane_id, model.elv_angle_id, model.rot_id, model.elbow_id]
 
-J = jacp[:, joint_id_list]
-J = J[:,:,0]
+# J = np.vstack((jacp, jacr)) 
+# J = J[:, joint_id_list]
+# J = J[:,:,0]
 
-def pseudo_inv(J, A):
-    A_inv = np.linalg.inv(A)
-    B = J @ A_inv @ J.T
-    return A_inv @ J.T @ np.linalg.inv(B)
+# def pseudo_inv(J, A):
+#     A_inv = np.linalg.inv(A)
+#     B = J @ A_inv @ J.T
+#     return A_inv @ J.T @ np.linalg.inv(B)
 
-J_plus = pseudo_inv(J,k)
-K_end = J_plus.T @ k @ J_plus
+# J_plus = pseudo_inv(J,k)
+# K_end = J_plus.T @ k @ J_plus
+# K_end = K_end[:3,:3]
+
+sh_arr = [0.5, 0.7, 1.0, 1.2, 1.4, 1.6]
+el_arr = [0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2]
+
+q_arr = []
+for i in sh_arr:
+    for j in el_arr:
+        q_arr.append([1.57, i, 0.2, j])
 
 res = 30
 u = np.linspace(0, 2 * np.pi, res)
@@ -378,25 +473,49 @@ y = np.outer(np.sin(u), np.sin(v)).flatten()
 z = np.outer(np.ones_like(u), np.cos(v)).flatten()
 sphere = np.vstack((x, y, z))
 
-eigvals, eigvecs = np.linalg.eigh(K_end)
-ellipsoid = eigvecs @ np.diag(eigvals) @ sphere
+data = {'Km': [], 'Ke': [], 'el_pos': [], 'wrist_pos': [], 'error': []}
 
 with mujoco.viewer.launch_passive(model.model, model.data) as viewer:
     viewer.opt.frame = mujoco.mjtFrame.mjFRAME_WORLD
 
     # for _ in range(100):
     #     mujoco.mj_step(model.model, model.data)
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot_surface(
-        ellipsoid[0].reshape(30, 30),
-        ellipsoid[1].reshape(30, 30),
-        ellipsoid[2].reshape(30, 30),
-        color='cyan', alpha=0.5
-    )
-    ax.view_init(elev=90, azim=-90)
-    ax.set_title("Endpoint Stiffness")
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
-    plt.show()
+    for i in range(len(q_arr)):
+        # try:
+        k, k_m = find_stiffness(q_arr[i])
+        # except:
+        #     print('error')
+        viewer.sync()
+        eigvals, eigvecs = np.linalg.eigh(k)
+        ellipsoid = eigvecs @ np.diag(eigvals) @ sphere
+        
+        body_name = "lunate"  
+        body_id = model.model.body(name=body_name).id
+        wrist_pos = model.data.xpos[body_id]
+        
+        elbow_site = "R.Ulna_marker"
+        site_id = mujoco.mj_name2id(model.model, mujoco.mjtObj.mjOBJ_SITE, elbow_site)
+        elbow_pos = model.data.site_xpos[site_id]
+
+        data['Km'].append(k_m)
+        data['Ke'].append(k)
+        data['el_pos'].append(elbow_pos[:2])
+        data['wrist_pos'].append(wrist_pos[:2])
+
+# ax = fig.add_subplot(111, projection='3d')
+# ax.plot_surface(
+#     ellipsoid[0].reshape(30, 30),
+#     ellipsoid[1].reshape(30, 30),
+#     ellipsoid[2].reshape(30, 30),
+#     color='red', alpha=0.8,
+# )
+# ax.view_init(elev=90, azim=-90)
+# ax.set_title("Endpoint Stiffness")
+# ax.set_xlabel('x')
+# ax.set_ylabel('y')
+# ax.set_xlim((-4000,4000))
+# ax.set_ylim((-4000,4000))
+# # ax.set_zlim((-500,500))
+# ax.set_zlabel('z')
+# ax.legend()
+# plt.show()
